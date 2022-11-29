@@ -1,0 +1,223 @@
+WITH 
+FROM_DATE AS (SELECT DATE_SUB(CAST(TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 HOUR) AS DATE), INTERVAL 1 DAY) P_FROM_DATE),
+TO_DATE AS (SELECT DATE_SUB(CAST(TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 HOUR) AS DATE), INTERVAL 1 DAY) P_TO_DATE),
+  ga_sessions   AS (
+                       SELECT * 
+                       FROM `calm-mariner-105612.ALL_GA360.ga_sessions` --CONSULTA: no podemos usar esta tabla porque no tiene portal inmobiliario, tu carro, ni m3. Hay alguna columna que exista en esta tabla y no en las calm-mariner.ga_sessions?
+                      WHERE date  BETWEEN (SELECT P_FROM_DATE FROM FROM_DATE) AND (SELECT P_TO_DATE FROM TO_DATE)
+                      and businessUnit='ML'
+                      and site in ('MLA','MLB','MLC','MLU','MLM','MCO','MPE','MLV','MEC')
+                      ),
+sqlBase0      AS (
+                       SELECT 
+                              date
+                            , businessUnit
+                            , site
+                            , CASE
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Li%iOS%'
+                                   THEN 'App iOS'
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Li%Android%'
+                                   THEN 'App Android'
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Wallet%Android%'
+                                   THEN 'Wallet Android'
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Wallet%iOS%'
+                                   THEN 'Wallet iOS'
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Wallet%Windows%'
+                                   THEN 'Wallet Windows Phone'
+                                  WHEN hits.appInfo.appName LIKE 'Mercado%Merchant%Android%'
+                                   THEN 'Merchant Android'
+                                  WHEN hits.appInfo.appName = 'SmartPOS'
+                                   THEN 'SmartPOS'
+                                  WHEN ( SELECT value FROM hits.customDimensions WHERE index=1 ) = 'mobile'
+                                   THEN 'Web Mobile'
+                                  WHEN ( SELECT value FROM hits.customDimensions WHERE index=1 ) <> 'mobile'
+                                   THEN 'Web Desktop'
+                                  ELSE 'UNKNOWN'
+                              END  AS  platform
+                            , geoNetwork.country AS country
+                            , CASE
+                                  WHEN site ='MBO' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/La_Paz"))
+                                  WHEN site ='MCO' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Bogota"))
+                                  WHEN site ='MCR' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Costa_Rica"))
+                                  WHEN site ='MCU' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Havana"))
+                                  WHEN site ='MDO' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Santo_Domingo"))
+                                  WHEN site ='MEC' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Guayaquil"))
+                                  WHEN site ='MGT' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Guatemala"))
+                                  WHEN site ='MHN' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Tegucigalpa"))
+                                  WHEN site ='MLA' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Argentina/Buenos_Aires"))
+                                  WHEN site ='MLB' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Sao_Paulo"))
+                                  WHEN site ='MLC' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Santiago"))
+                                  WHEN site ='MLM' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Mexico_City"))
+                                  WHEN site ='MLU' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Montevideo"))
+                                  WHEN site ='MLV' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Caracas"))
+                                  WHEN site ='MNI' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Managua"))
+                                  WHEN site ='MPA' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Panama"))
+                                  WHEN site ='MPE' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Lima"))
+                                  WHEN site ='MPY' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/Asuncion"))
+                                  WHEN site ='MSV' THEN (SELECT EXTRACT(DATETIME FROM TIMESTAMP_MILLIS(CAST(((visitStartTime*1000)+0) AS INT64)) AT TIME ZONE "America/El_Salvador"))
+                              END AS timeStampInitSession /*CONSULTA: hay que hacer este campo para medir (por ej sesiones o hits) sin defasaje de días en horario del pais?. Nosotros no lo hacemos, y la metrica de session es , COUNT( DISTINCT CONCAT(fullVisitorId, CAST(visitStartTime AS string)) ) AS Sessions a secas*/
+                            , fullVisitorId
+                            , CONCAT(fullVisitorId, CAST(visitStartTime AS string)) AS sessionId,
+                            sessionId AS sessionIdOld
+                           , totals.timeOnSite AS duration
+                            , lower(trafficSource.source) AS source
+                            , lower(trafficSource.medium) AS medium
+                            , lower(trafficSource.campaign) AS campaign
+                            , lower(trafficSource.adContent) AS adContent
+, COALESCE(trafficSource.adwordsClickInfo.adNetworkType, '(not set)') AS adNetworkType
+    ,REGEXP_REPLACE(trafficSource.campaignCode,'[^0-9]','') AS TOOL_ID, /*CONSULTA: mismo campo que usan en matt pms_tool_id?*/
+      trafficSource.adwordsClickInfo.campaignId AS CampaignID,
+      /*CONSULTA: creacion de campo bounce? siempre se crea de la misma manera?*/ 
+       CASE
+      WHEN hits.appInfo.appName IS NOT NULL THEN (totals.hits = 1 AND COALESCE(hits.isExit, FALSE))
+    ELSE  NOT (totals.bounces IS NULL)
+    END  AS isBounce,
+  
+    CASE # MercadoLibre
+      WHEN businessUnit='ML' THEN ( SELECT value FROM hits.customDimensions WHERE index=103) # MercadoPago
+      WHEN businessUnit='MP' THEN ( SELECT value FROM hits.customDimensions WHERE index=52)
+    END  AS UserID --creacion campo meli cus_cust_id (se ve que para MP es la custom dimension 52)
+                            , CASE WHEN ga_sessions.visitnumber = 1  THEN TRUE ELSE FALSE END AS firstTimeVisitor
+                            , COUNTIF(hits.social.hasSocialSourceReferral = "Yes") > 0 AS socialSession
+                            , CASE
+                               WHEN businessUnit = 'MP' THEN TRUE
+                               WHEN businessUnit = 'ML' THEN 
+                                       COUNTIF(lower(COALESCE((SELECT value FROM hits.customDimensions WHERE index=8), 'none')) in ("core","none")) > 0 
+                               ELSE FALSE 
+                              END AS isCore,
+  /*CONSULTA: porque hacer esto para saber organico en vez de tenerlo de trafficSource.medium = ORGANIC?*/
+  SUM(CASE WHEN hits.appInfo.appName IN ('MercadoLibre iOS', 'MercadoLibre Android') 
+              AND ga_sessions.channelGrouping = 'Organic Search'
+              AND (hits.appInfo.landingScreenName LIKE '%/HOME/MAIN/%' OR hits.appInfo.landingScreenName LIKE '%/STATIC/%' 
+                    OR hits.page.pagePath = '/HOME/MAIN/'
+                    OR hits.page.pagePath LIKE '%/STATIC/%'
+                    OR (((hits.appInfo.landingScreenName ) LIKE '%/SPLINTER/%' 
+                    OR (hits.page.pagePath ) LIKE '%/SPLINTER/%') 
+                    AND (( SELECT MAX (value) FROM hits.customDimensions WHERE index=110 )  ) LIKE '%www%'))
+              AND hits.hitNumber = 1 THEN 1 
+            WHEN(( SELECT value FROM hits.customDimensions WHERE index=1 ) IN ('mobile', 'desktop', 'tablet', 'UNKNOWN', 'forced_desktop') ) 
+              AND ga_sessions.channelGrouping = 'Organic Search'
+              AND ( hits.appInfo.landingScreenName LIKE '%/HOME/MAIN/%' 
+                    OR hits.appInfo.landingScreenName LIKE '%/STATIC/%'
+                    OR hits.page.pagePath = '/HOME/MAIN/'
+                    OR hits.page.pagePath LIKE '%/STATIC/%'
+                    OR (((hits.appInfo.landingScreenName ) LIKE '%/SPLINTER/%'
+                    OR (hits.page.pagePath ) LIKE '%/SPLINTER/%')
+                    AND (( SELECT MAX (value) FROM hits.customDimensions WHERE index=110 )  ) LIKE '%www%') ) AND hits.hitNumber = 1 THEN 1
+            ELSE 0 END) as FlAG_ORG_MARCA
+
+
+                       FROM ga_sessions
+                       , UNNEST(ga_sessions.hits) as hits
+
+                       /*CONSULTA: para qué este filtro?
+                       Nosotros filtramos por page vertical de VIS: 
+                       WHERE ((SELECT UPPER(MAX(value)) FROM hits.customDimensions WHERE index=8) in ('MOTORS','MOT','REAL_ESTATE','SERVICES'))*/
+
+                       WHERE IF(hits.page.pageTitle IS NOT NULL,
+                                  REGEXP_CONTAINS(hits.page.pageTitle, r'^app-|^old-world$|^nodejs-|^salesforce$'),
+                                  IF(hits.appInfo.appName IS NOT NULL,
+                                     REGEXP_CONTAINS(hits.appInfo.appName, r'(Mercado|SmartPOS).+'),
+                                     FALSE
+                                    )
+                                 )
+                         AND hits.Type IN ("PAGE", "APPVIEW")
+                       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,17,18,19,20
+                      ),
+     sqlBase1      AS (
+                       SELECT
+                             date
+                           , businessUnit
+                           , site
+                           , platform
+                           , timeStampInitSession
+                           , CASE 
+-- Direct 
+                               WHEN source = "(direct)" AND (medium = "(not set)" OR medium = "(none)") THEN "Direct"
+-- Organic Search   
+                               WHEN medium = "organic" THEN "Organic Search"
+-- Social    
+                               WHEN socialSession OR REGEXP_CONTAINS(medium, r"^(social|social-network|social-media|sm|social network|social media)$") THEN "Social"
+-- eMail
+                               WHEN medium = "email" THEN "Email"
+-- Affiliates
+                               WHEN medium = "affiliate" THEN "Affiliates"
+-- Referral
+                               WHEN medium = "referral" THEN "Referral"
+-- Paid Search
+                               WHEN REGEXP_CONTAINS(medium, r"^(cpc|ppc|paidsearch)$") AND adNetworkType <> "Content" THEN "Paid Search" /*CONSULTA: por qué este desgloce de paid con adNetworkType?*/
+-- Other Advertising
+                               WHEN REGEXP_CONTAINS(medium, r"^(cpv|cpa|cpp|content-text)$") THEN "Other Advertising"
+-- Display     
+                               WHEN REGEXP_CONTAINS(medium, r"^(display|cpm|banner)$") OR adNetworkType = "Content" THEN "Display"
+-- Push Notifications 
+                               WHEN source = "notification" AND medium = "push" THEN "Push Notifications" /*CONSULTA: esto sería así en VIS también?*/
+-- Promotional Notifications 
+                               WHEN source = "promotional_notifications" AND medium = "notifications" THEN "Promotional Notifications" /*CONSULTA: esto sería así en VIS también?*/
+                               /*nosotros tenemos el siguiente bucket que integra acciones de email y push:
+                                WHEN (   REGEXP_CONTAINS(upper(trafficSource.source),'.*PROMOTIONAL_EMAILS*') IS TRUE
+                                        OR REGEXP_CONTAINS(upper(trafficSource.medium),'.*EMAIL.*') IS TRUE
+                                        OR REGEXP_CONTAINS(upper(trafficSource.medium),'.*PUSH.*') IS TRUE
+                                      )
+                                  THEN 'PUSH-EMAIL'*/
+--Other    
+                               ELSE "(Other)"
+                             END AS channelGrouping_cust
+                           , source
+                           , medium
+                           , campaign
+                           ,CampaignID
+                           , adContent
+                           , adNetworkType
+                           , fullVisitorId
+                           , sessionId
+                           ,sessionIdOld
+                         , duration
+                           ,UserID
+                           ,FlAG_ORG_MARCA
+                           , CASE
+                                 WHEN site = 'MBO' THEN country = 'Bolivia'
+                                 WHEN site = 'MCO' THEN country = 'Colombia'
+                                 WHEN site = 'MCR' THEN country = 'Costa Rica'
+                                 WHEN site = 'MCU' THEN country = 'Cuba'
+                                 WHEN site = 'MDO' THEN country = 'Dominican Republic'
+                                 WHEN site = 'MEC' THEN country = 'Ecuador'
+                                 WHEN site = 'MGT' THEN country = 'Guatemala'
+                                 WHEN site = 'MHN' THEN country = 'Honduras'
+                                 WHEN site = 'MLA' THEN country = 'Argentina'
+                                 WHEN site = 'MLB' THEN country = 'Brazil'
+                                 WHEN site = 'MLC' THEN country = 'Chile'
+                                 WHEN site = 'MLM' THEN country = 'Mexico'
+                                 WHEN site = 'MLU' THEN country = 'Uruguay'
+                                 WHEN site = 'MLV' THEN country = 'Venezuela'
+                                 WHEN site = 'MNI' THEN country = 'Nicaragua'
+                                 WHEN site = 'MPA' THEN country = 'Panama'
+                                 WHEN site = 'MPE' THEN country = 'Peru'
+                                 WHEN site = 'MPY' THEN country = 'Paraguay'
+                                 WHEN site = 'MSV' THEN country = 'El Salvador'
+                                 ELSE  FALSE
+                             END AS isTrafficLocal
+                           , country = 'United States' AS isTrafficUS
+                           , isBounce
+                           , firstTimeVisitor
+                           , isCore
+                           ,TOOL_ID
+                       FROM sqlBase0 
+                      )
+SELECT
+Date AS TIM_DAY,
+site as SIT_SITE_ID,
+platform AS PLATFORM_NAME,
+channelGrouping_cust AS  CHANNEL_NAME,
+CASE WHEN FlAG_ORG_MARCA >=1 Then true  ELSE False END AS IS_ORG_BRAND,
+source AS SOURCE_CD,
+CASE WHEN channelGrouping_cust='Affiliates' THEN CONCAT (CAST(TOOL_ID as STRING),'-||-',campaign) ELSE campaign END  AS CAMPAIGN_NAME, /*CONSULTA: que significa Affilliate? por qué usar tool id cuando es Affilliate?*/
+medium AS MEDIUM_NAME,
+COUNT(DISTINCT sessionId) AS QTY_SESSIONS,
+COUNT(DISTINCT fullVisitorId) AS QTY_VISITS
+FROM
+  sqlBase1 b
+  WHERE
+  Iscore and (isTrafficLocal or isTrafficUS ) and 
+  not isBounce 
+GROUP BY 1,2,3,4,5,6,7,8;
