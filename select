@@ -67,7 +67,7 @@ sqlBase0      AS (
 , COALESCE(trafficSource.adwordsClickInfo.adNetworkType, '(not set)') AS adNetworkType
     ,REGEXP_REPLACE(trafficSource.campaignCode,'[^0-9]','') AS TOOL_ID, /*CONSULTA: mismo campo que usan en matt pms_tool_id?*/
       trafficSource.adwordsClickInfo.campaignId AS CampaignID,
-      /*CONSULTA: creacion de campo bounce? siempre se crea de la misma manera?*/ 
+      /*CONSULTA: creacion de campo bounce? siempre se crea de la misma manera? tiene sentido usarlo para medir hits? (ejemplo clics en boton llamar)*/ 
        CASE
       WHEN hits.appInfo.appName IS NOT NULL THEN (totals.hits = 1 AND COALESCE(hits.isExit, FALSE))
     ELSE  NOT (totals.bounces IS NULL)
